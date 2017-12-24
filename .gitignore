@@ -1,3 +1,24 @@
+# Created by .ignore support plugin (hsz.mobi)
+## Plugin-specific files:
+
+# IntelliJ
+out/
+
+# mpeltonen/sbt-idea plugin
+.idea_modules/
+
+# JIRA plugin
+atlassian-ide-plugin.xml
+
+# Cursive Clojure plugin
+.idea/replstate.xml
+
+# Crashlytics plugin (for Android Studio and IntelliJ)
+com_crashlytics_export_strings.xml
+crashlytics.properties
+crashlytics-build.properties
+fabric.properties
+### Go template
 # Binaries for programs and plugins
 *.exe
 *.dll
@@ -12,3 +33,11 @@
 
 # Project-local glide cache, RE: https://github.com/Masterminds/glide/issues/736
 .glide/
+
+### my
+.idea/
+*.log
+*.txt
+compile-dashboard
+compile-dashboard.exe
+vendor

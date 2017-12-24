@@ -1,0 +1,21 @@
+{
+	"ImportPath": "github.com/gongt/compile-dashboard",
+	"GoVersion": "go1.9",
+	"GodepVersion": "v79",
+	"Deps": [
+		{
+			"ImportPath": "github.com/jroimartin/gocui",
+			"Comment": "v0.3.0-68-g4f518ed",
+			"Rev": "4f518eddb04b8f73870836b6d1941e8aa3c06637"
+		},
+		{
+			"ImportPath": "github.com/mattn/go-runewidth",
+			"Comment": "v0.0.2-3-g97311d9",
+			"Rev": "97311d9f7767e3d6f422ea06661bc2c7a19e8a5d"
+		},
+		{
+			"ImportPath": "github.com/nsf/termbox-go",
+			"Rev": "aa4a75b1c20a2b03751b1a9f7e41d58bd6f71c43"
+		}
+	]
+}
