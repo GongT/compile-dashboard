@@ -2,16 +2,17 @@ package gui
 
 import (
 	"github.com/jroimartin/gocui"
-	"errors"
 	"github.com/gongt/compile-dashboard/lib"
 	"github.com/nsf/termbox-go"
+	"fmt"
 )
 
 type Control struct {
 	g       *gocui.Gui
 	tabs    *tabManager
 	state   *tabPanel
-	actions map[string]initAction
+	waiting chan int
+	Error   chan error
 }
 
 func NewControl() (ui *Control, err error) {
@@ -38,7 +39,8 @@ func NewControl() (ui *Control, err error) {
 		gui,
 		tab,
 		state,
-		make(map[string]initAction),
+		make(chan int),
+		make(chan error),
 	}
 
 	gui.SetManagerFunc(func(_ *gocui.Gui) error {
@@ -69,9 +71,13 @@ func termboxClose() {
 	lib.MainLogger.Println("screen terminated.")
 }
 
-func (ui *Control) Close() {
+func (ui *Control) Inspect() string {
+	return "the main screen controler"
+}
+func (ui *Control) Close() error {
 	lib.MainLogger.Println("called UI.Close().")
 	termboxClose()
+	return nil
 }
 
 func (ui *Control) initKeys() error {
@@ -85,6 +91,12 @@ func (ui *Control) initKeys() error {
 
 func quit(_ *gocui.Gui, _ *gocui.View) error {
 	return gocui.ErrQuit
+}
+
+func (ui *Control) WaitInit() {
+	if ui.waiting != nil {
+		<-ui.waiting
+	}
 }
 
 func (ui *Control) render(g *gocui.Gui) error {
@@ -111,27 +123,42 @@ func (ui *Control) render(g *gocui.Gui) error {
 		return err
 	}
 
-	return ui.tabs.render(event)
-}
-
-func (ui *Control) EventLoop() error {
-	lib.MainLogger.Println("tab count=", ui.tabs.length)
-
-	if ui.tabs.length == 0 {
-		ui.g.Close()
-		lib.MainLogger.Println("raising error: no tabs")
-		return errors.New("no Tabs, can not start event loop")
-	}
-	if err := ui.g.MainLoop(); err != nil && err != gocui.ErrQuit {
+	err = ui.tabs.render(event)
+	if err != nil {
 		return err
 	}
+
+	if ui.waiting != nil {
+		close(ui.waiting)
+		ui.waiting = nil
+	}
+
 	return nil
+}
+
+func (ui *Control) Message(msg string) {
+	view, _ := ui.g.View(viewNameMessage)
+	fmt.Fprintln(view, msg)
+}
+
+func (ui *Control) StartEventLoop() {
+	go func() {
+		lib.MainLogger.Println("main event loop started")
+		err := ui.g.MainLoop()
+		lib.MainLogger.Println("main event loop terminated")
+		if err != nil {
+			ui.Error <- err
+		}
+		close(ui.Error)
+	}()
+
+	ui.WaitInit()
 }
 
 func (ui *Control) AddTab(name string, action initAction) {
 	lib.MainLogger.Println("add tab", name)
+	ui.state.dirty()
 	ui.tabs.add(name, action)
-	ui.actions[name] = action
 }
 
 func (ui *Control) MarkTabError(name string, hasError bool) error {
@@ -144,13 +171,14 @@ func (ui *Control) MarkTabError(name string, hasError bool) error {
 }
 
 func (ui *Control) Update(view *gocui.View) error {
+	// lib.MainLogger.Println("try update view:", view.Name())
 	i, e := ui.tabs.findIndex(view.Name())
 	if i == -1 {
 		return e
 	}
 	if i == ui.tabs.current {
 		ui.g.Update(emptyRenderEvent)
-		lib.MainLogger.Println("update view:", view.Name())
+		// lib.MainLogger.Println("update view:", view.Name())
 	}
 
 	return nil

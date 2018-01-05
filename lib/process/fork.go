@@ -4,10 +4,14 @@ import (
 	"os/exec"
 	"bytes"
 	"github.com/gongt/compile-dashboard/lib"
+	"fmt"
+	"os"
+	"time"
 )
 
 type ChildProcess struct {
 	cmd        *exec.Cmd
+	title      string
 	OutputPipe *bufferWriter
 	Stop       chan error
 	isRunning  bool
@@ -84,8 +88,9 @@ func NewChildProcess(script string) *ChildProcess {
 
 	cp := ChildProcess{
 		cmd,
+		script,
 		pipe,
-		make(chan error),
+		make(chan error, 1),
 		false,
 	}
 
@@ -99,16 +104,38 @@ func NewChildProcess(script string) *ChildProcess {
 
 		close(pipe.Output)
 		close(pipe.Clear)
+		close(cp.Stop)
 		lib.MainLogger.Println("subprocess end: ", script)
 	}()
 
 	return &cp
 }
 
-func (cp *ChildProcess) Close() error {
-	err := cp.cmd.Process.Kill()
-	if err != nil {
-		return err
+func (cp *ChildProcess) Inspect() string {
+	return fmt.Sprintf("child process: %d", cp.cmd.Process.Pid)
+}
+func (cp *ChildProcess) Close() (err error) {
+	pid := fmt.Sprint(cp.cmd.Process.Pid)
+	lib.MainLogger.Printf("stop child process: %s: %s", pid, cp.title)
+	if cp.cmd.ProcessState != nil && cp.cmd.ProcessState.Exited() {
+		return
 	}
-	return nil
+
+	cp.cmd.Process.Signal(os.Interrupt)
+	select {
+	case <-time.After(3 * time.Second):
+		err = cp.cmd.Process.Kill()
+		lib.MainLogger.Println("process[" + pid + "] killed as timeout reached")
+		if err != nil {
+			lib.MainLogger.Println("process["+pid+"] can not kill:", err)
+			return
+		}
+	case err = <-cp.Stop:
+		if err != nil {
+			lib.MainLogger.Println("process["+pid+"] done with error = %v", err)
+		} else {
+			lib.MainLogger.Println("process[" + pid + "] done gracefully without error")
+		}
+	}
+	return
 }

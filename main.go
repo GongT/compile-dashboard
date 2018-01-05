@@ -3,33 +3,38 @@ package main
 import (
 	"github.com/gongt/compile-dashboard/lib/gui"
 	"github.com/gongt/compile-dashboard/lib"
-	"os"
-	"os/signal"
-	"syscall"
 	"github.com/gongt/compile-dashboard/lib/process"
 	"fmt"
+	"github.com/jroimartin/gocui"
 )
 
 func main() {
 	lib.InitLogger()
 	defer func() { lib.CloseLogger() }()
 
-	ret := 0
-	ch := createWatcher()
+	startSignalHandler()
 
 	screen, err := gui.NewControl()
 	if err != nil {
 		panic(err)
 	}
-	defer func() { screen.Close() }()
+	registerRunning(screen)
 
 	go func() {
-		<-ch
-		lib.MainLogger.Println("receive quit signal")
-		os.Exit(ret)
+		err := <-screen.Error
+		lib.MainLogger.Println("screen control result:", err)
+		if err == gocui.ErrQuit {
+			GracefulQuit(0)
+		} else {
+			GracefulQuit(100)
+		}
+		lib.MainLogger.Println("program must quit now!")
 	}()
 
-	// decodeConfigFile()
+	screen.StartEventLoop()
+
+	screen.Message(fmt.Sprint("configFile:", lib.ConfigFile))
+
 	// output := lib.NewPseudoOutput()
 	// output.Start()
 
@@ -48,6 +53,7 @@ func main() {
 		view := event.View
 		go func() {
 			proc := process.NewChildProcess("while true; do echo -n 'process1:'; date; sleep 1; done")
+			registerRunning(proc)
 			defer func() {
 				screen.Update(view)
 				proc.Close()
@@ -72,6 +78,7 @@ func main() {
 		view := event.View
 		go func() {
 			proc := process.NewChildProcess("truncate --size 0 test1.txt; tail -f test1.txt")
+			registerRunning(proc)
 			defer func() {
 				screen.Update(view)
 				proc.Close()
@@ -95,27 +102,5 @@ func main() {
 		}()
 	})
 
-	lib.MainLogger.Println("main event loop started")
-	if err := screen.EventLoop(); err != nil {
-		panic(err)
-	}
-	//process1.Close()
-	lib.MainLogger.Println("main app terminated")
-}
-
-/*
-defer func () {
-	if r := recover(); r != nil {
-		screen.Close()
-		os.Exit(1)
-	}
-}()
-*/
-func createWatcher() chan os.Signal {
-	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGINT)
-	signal.Notify(ch, syscall.SIGTERM)
-	signal.Notify(ch, syscall.SIGHUP)
-	signal.Notify(ch, syscall.SIGQUIT)
-	return ch
+	<-mainDebugHang
 }

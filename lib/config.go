@@ -3,28 +3,35 @@ package lib
 import (
 	"io/ioutil"
 	"encoding/json"
-	"fmt"
 )
 
-type ConfigFile struct {
-	typescript struct {
-		project string
-		sources []string
-	}
-	scss    []string
-	command string
+type configFile struct {
+	Transpilers []struct {
+		Command string `json:"command"`
+		Title   string `json:"title"`
+	} `json:"transpilers"`
+	Scripts struct {
+		Start   string `json:"start"`
+		Restart string `json:"restart"`
+		Stop    string `json:"stop"`
+	} `json:"scripts"`
+	Watch []string `json:"watch"`
 }
 
-func decodeConfigFile() ConfigFile {
-	content, err := ioutil.ReadFile("compile.json")
+var ConfigFile configFile
+
+func init() {
+	ConfigFile = decodeConfigFile("build-config.json")
+}
+
+func decodeConfigFile(file string) configFile {
+	content, err := ioutil.ReadFile(file)
 	if err != nil {
-		println("Error: can not open compile.json for read.")
+		println("Error: can not open " + file + " for read.")
 		panic(err)
 	}
-	var jsondata ConfigFile
+	var jsondata configFile
 	json.Unmarshal(content, &jsondata)
-
-	fmt.Printf("configFile: %v\n", jsondata)
 
 	return jsondata
 }

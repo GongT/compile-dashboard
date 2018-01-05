@@ -8,11 +8,12 @@ import (
 type currentTab int
 
 type tabPanel struct {
-	gui      *gocui.Gui
-	tab      *tabManager
-	hasErr   [maxTabCount]bool
-	activate currentTab
-	callback func(int)
+	gui        *gocui.Gui
+	tab        *tabManager
+	hasErr     [maxTabCount]bool
+	activate   currentTab
+	callback   func(int)
+	needUpdate bool
 }
 
 func newTabPanel(gui *gocui.Gui, tabControl *tabManager, callback func(int)) *tabPanel {
@@ -23,6 +24,7 @@ func newTabPanel(gui *gocui.Gui, tabControl *tabManager, callback func(int)) *ta
 	ret.hasErr = [maxTabCount]bool{}
 	ret.activate = 0
 	ret.callback = callback
+	ret.needUpdate = false
 
 	return ret
 }
@@ -58,11 +60,18 @@ func (tp *tabPanel) initKeys() error {
 }
 
 func (tp *tabPanel) render(e *renderEvent) error {
+	if tp.needUpdate {
+		tp.needUpdate = false
+		tp.update(findView(e.g, viewNameStatus))
+	}
 	return subLayout(e.g, viewNameStatus, Geo{e.splitCenter, 0, e.maxX - 1, e.splitSideMiddle - 1}, func(view *gocui.View) {
 		view.Wrap = false
 		view.Title = "Status"
 		tp.update(view)
 	})
+}
+func (tp *tabPanel) dirty() {
+	tp.needUpdate = true
 }
 
 func (tp *tabPanel) update(view *gocui.View) error {

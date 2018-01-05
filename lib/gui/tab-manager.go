@@ -51,6 +51,9 @@ func (mm *tabManager) add(name string, action initAction) {
 }
 
 func (mm *tabManager) render(e *renderEvent) error {
+	if mm.length == 0 {
+		return nil
+	}
 	for index, needInit := range mm.notInit {
 		lib.MainLogger.Println("first time init view: ", needInit.name)
 		if index != mm.current {
