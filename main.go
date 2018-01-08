@@ -35,19 +35,6 @@ func main() {
 
 	screen.Message(fmt.Sprint("configFile:", lib.ConfigFile))
 
-	// output := lib.NewPseudoOutput()
-	// output.Start()
-
-	/*screen.AddTab("Tab A", func(event gui.ViewInitEvent) {
-		go func() {
-			for {
-				data := <-output.Tunnel
-				fmt.Println(data)
-				screen.OutputTab("Tab A", []byte(data))
-			}
-		}()
-	})*/
-
 	screen.AddTab("Tab A", func(event gui.ViewInitEvent) {
 		lib.MainLogger.Println("Tab A has inited")
 		view := event.View
@@ -104,3 +91,34 @@ func main() {
 
 	<-mainDebugHang
 }
+
+func startMainTab(screen *gui.Control){
+	screen.AddTab("SERVER", func(event gui.ViewInitEvent) {
+		view := event.View
+		go func() {
+			proc := process.NewChildProcess("truncate --size 0 test1.txt; tail -f test1.txt")
+			registerRunning(proc)
+			defer func() {
+				screen.Update(view)
+				proc.Close()
+			}()
+			for {
+				select {
+				case data := <-proc.OutputPipe.Output:
+					view.Write(data)
+					lib.MainLogger.Println("Tab B output!", string(data))
+				case <-proc.OutputPipe.Clear:
+					view.Clear()
+					lib.MainLogger.Println("Tab B Clear!")
+				case err := <-proc.Stop:
+					screen.MarkTabError("Tab B", true)
+					fmt.Fprintln(view, "\n\nProcess Stoped: ", err)
+					lib.MainLogger.Println("Tab B Stoped!")
+					return
+				}
+				screen.Update(view)
+			}
+		}()
+	})
+}
+
