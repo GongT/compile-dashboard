@@ -62,9 +62,9 @@ func (tp *tabPanel) initKeys() error {
 func (tp *tabPanel) render(e *renderEvent) error {
 	if tp.needUpdate {
 		tp.needUpdate = false
-		tp.update(findView(e.g, viewNameStatus))
+		tp.update(findView(e.ctl.gui, viewNameStatus))
 	}
-	return subLayout(e.g, viewNameStatus, Geo{e.splitCenter, 0, e.maxX - 1, e.splitSideMiddle - 1}, func(view *gocui.View) {
+	return subLayout(e.ctl.gui, viewNameStatus, Geo{e.splitCenter, 0, e.maxX - 1, e.splitSideMiddle - 1}, func(view *gocui.View) {
 		view.Wrap = false
 		view.Title = "Status"
 		tp.update(view)

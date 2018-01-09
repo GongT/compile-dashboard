@@ -5,14 +5,17 @@ import (
 	"github.com/gongt/compile-dashboard/lib"
 	"github.com/nsf/termbox-go"
 	"fmt"
+	"sync"
 )
 
 type Control struct {
-	g       *gocui.Gui
-	tabs    *tabManager
-	state   *tabPanel
-	waiting chan int
-	Error   chan error
+	gui       *gocui.Gui
+	tabs      *tabManager
+	state     *tabPanel
+	waiting   chan bool
+	Error     chan error
+	writeLock sync.Mutex
+	inited    bool
 }
 
 func NewControl() (ui *Control, err error) {
@@ -39,8 +42,10 @@ func NewControl() (ui *Control, err error) {
 		gui,
 		tab,
 		state,
-		make(chan int),
+		make(chan bool),
 		make(chan error),
+		sync.Mutex{},
+		false,
 	}
 
 	gui.SetManagerFunc(func(_ *gocui.Gui) error {
@@ -81,7 +86,7 @@ func (ui *Control) Close() error {
 }
 
 func (ui *Control) initKeys() error {
-	gui := ui.g
+	gui := ui.gui
 	if err := gui.SetKeybinding(viewNameAll, gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
 		return err
 	}
@@ -94,13 +99,13 @@ func quit(_ *gocui.Gui, _ *gocui.View) error {
 }
 
 func (ui *Control) WaitInit() {
-	if ui.waiting != nil {
-		<-ui.waiting
-	}
+	lib.MainLogger.Println("waiting screen to init: ")
+	_, ok := <-ui.waiting
+	lib.MainLogger.Println("this is first wait: ", ok)
 }
 
 func (ui *Control) render(g *gocui.Gui) error {
-	event := newRenderEvent(g)
+	event := newRenderEvent(ui)
 	var err error
 
 	err = subLayout(g, viewNameMessage, Geo{event.splitCenter, event.splitSideMiddle, event.maxX - 1, event.maxY - 2}, func(view *gocui.View) {
@@ -128,23 +133,25 @@ func (ui *Control) render(g *gocui.Gui) error {
 		return err
 	}
 
-	if ui.waiting != nil {
+	if !ui.inited {
+		ui.inited = true
+		lib.MainLogger.Println("first render, init complete!")
+		ui.waiting <- true
 		close(ui.waiting)
-		ui.waiting = nil
 	}
 
 	return nil
 }
 
 func (ui *Control) Message(msg string) {
-	view, _ := ui.g.View(viewNameMessage)
+	view, _ := ui.gui.View(viewNameMessage)
 	fmt.Fprintln(view, msg)
 }
 
 func (ui *Control) StartEventLoop() {
 	go func() {
 		lib.MainLogger.Println("main event loop started")
-		err := ui.g.MainLoop()
+		err := ui.gui.MainLoop()
 		lib.MainLogger.Println("main event loop terminated")
 		if err != nil {
 			ui.Error <- err
@@ -170,16 +177,12 @@ func (ui *Control) MarkTabError(name string, hasError bool) error {
 	return nil
 }
 
-func (ui *Control) Update(view *gocui.View) error {
+func (ui *Control) Update(view *gocui.View) {
 	// lib.MainLogger.Println("try update view:", view.Name())
-	i, e := ui.tabs.findIndex(view.Name())
-	if i == -1 {
-		return e
-	}
-	if i == ui.tabs.current {
-		ui.g.Update(emptyRenderEvent)
+	i, _ := ui.tabs.findIndex(view.Name())
+	if i == -1 || i == ui.tabs.current {
+		ui.gui.Update(emptyRenderEvent)
 		// lib.MainLogger.Println("update view:", view.Name())
 	}
-
-	return nil
+	return
 }

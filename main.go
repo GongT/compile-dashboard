@@ -6,27 +6,30 @@ import (
 	"github.com/gongt/compile-dashboard/lib/process"
 	"fmt"
 	"github.com/jroimartin/gocui"
+	"time"
 )
 
 func main() {
 	lib.InitLogger()
 	defer func() { lib.CloseLogger() }()
 
-	startSignalHandler()
+	lib.StartSignalHandler()
+
+	lib.LoadConfigFile()
 
 	screen, err := gui.NewControl()
 	if err != nil {
 		panic(err)
 	}
-	registerRunning(screen)
+	defer lib.RegisterRunning(screen)()
 
 	go func() {
 		err := <-screen.Error
 		lib.MainLogger.Println("screen control result:", err)
 		if err == gocui.ErrQuit {
-			GracefulQuit(0)
+			lib.GracefulQuit(0)
 		} else {
-			GracefulQuit(100)
+			lib.GracefulQuit(100)
 		}
 		lib.MainLogger.Println("program must quit now!")
 	}()
@@ -35,90 +38,59 @@ func main() {
 
 	screen.Message(fmt.Sprint("configFile:", lib.ConfigFile))
 
-	screen.AddTab("Tab A", func(event gui.ViewInitEvent) {
-		lib.MainLogger.Println("Tab A has inited")
-		view := event.View
-		go func() {
-			proc := process.NewChildProcess("while true; do echo -n 'process1:'; date; sleep 1; done")
-			registerRunning(proc)
-			defer func() {
-				screen.Update(view)
-				proc.Close()
-			}()
-			for {
-				select {
-				case data := <-proc.OutputPipe.Output:
-					view.Write(data)
-				case <-proc.OutputPipe.Clear:
-					view.Clear()
-				case err := <-proc.Stop:
-					screen.MarkTabError("Tab A", true)
-					fmt.Fprintln(view, "\n\nProcess Stoped: ", err)
-					return
-				}
-				screen.Update(view)
-			}
-		}()
-	})
+	startMainTab(screen, lib.ConfigFile.Scripts.Start)
 
-	screen.AddTab("Tab B", func(event gui.ViewInitEvent) {
-		view := event.View
-		go func() {
-			proc := process.NewChildProcess("truncate --size 0 test1.txt; tail -f test1.txt")
-			registerRunning(proc)
-			defer func() {
-				screen.Update(view)
-				proc.Close()
-			}()
-			for {
-				select {
-				case data := <-proc.OutputPipe.Output:
-					view.Write(data)
-					lib.MainLogger.Println("Tab B output!", string(data))
-				case <-proc.OutputPipe.Clear:
-					view.Clear()
-					lib.MainLogger.Println("Tab B Clear!")
-				case err := <-proc.Stop:
-					screen.MarkTabError("Tab B", true)
-					fmt.Fprintln(view, "\n\nProcess Stoped: ", err)
-					lib.MainLogger.Println("Tab B Stoped!")
-					return
-				}
-				screen.Update(view)
-			}
-		}()
-	})
-
-	<-mainDebugHang
+	<-lib.MainDebugHang
 }
 
-func startMainTab(screen *gui.Control){
-	screen.AddTab("SERVER", func(event gui.ViewInitEvent) {
-		view := event.View
-		go func() {
-			proc := process.NewChildProcess("truncate --size 0 test1.txt; tail -f test1.txt")
-			registerRunning(proc)
-			defer func() {
-				screen.Update(view)
-				proc.Close()
-			}()
-			for {
-				select {
-				case data := <-proc.OutputPipe.Output:
-					view.Write(data)
-					lib.MainLogger.Println("Tab B output!", string(data))
-				case <-proc.OutputPipe.Clear:
-					view.Clear()
-					lib.MainLogger.Println("Tab B Clear!")
-				case err := <-proc.Stop:
-					screen.MarkTabError("Tab B", true)
-					fmt.Fprintln(view, "\n\nProcess Stoped: ", err)
-					lib.MainLogger.Println("Tab B Stoped!")
-					return
+func startProcessorTab(screen *gui.Control, config lib.ConfigFileTranspilerDefine) {
+	screen.AddTab(config.Title, func(view gui.ViewInitEvent) {
+		proc := process.NewChildProcess("truncate --size 0 test1.txt; tail -f test1.txt")
+		defer lib.RegisterRunning(proc)()
+		for {
+			select {
+			case data := <-proc.OutputPipe.Output:
+				view.Write(data)
+			case <-proc.OutputPipe.Clear:
+				view.Clear()
+			case err := <-proc.Stop:
+				if err != nil {
+					screen.MarkTabError(config.Title, true)
 				}
-				screen.Update(view)
+				fmt.Fprintln(view, "\n\nProcess Stoped: ", err)
+				lib.MainLogger.Println(config.Title + " Stoped!")
+				return
 			}
-		}()
+		}
 	})
 }
 
+func startMainTab(screen *gui.Control, mainScript string) {
+	const name = "SERVER"
+	screen.AddTab(name, func(view gui.ViewInitEvent) {
+		proc := process.NewChildProcess(mainScript)
+		lib.RegisterRunning(proc)
+
+		defer func() { lib.UnRegisterRunning(proc) }()
+
+		for {
+			select {
+			case data := <-proc.OutputPipe.Output:
+				view.Write(data)
+			case <-proc.OutputPipe.Clear:
+				view.Clear()
+			case err := <-proc.Stop:
+				if err != nil {
+					screen.MarkTabError(name, true)
+				}
+				fmt.Fprintln(view, "\n\nProcess Stoped: ", err)
+
+				lib.MainLogger.Println(name + " Stoped!")
+
+				// auto restart after 5s
+				<-time.After(5 * time.Second)
+				proc = process.NewChildProcess(mainScript)
+			}
+		}
+	})
+}

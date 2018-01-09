@@ -1,15 +1,15 @@
-package main
+package lib
 
 import (
-	"github.com/gongt/compile-dashboard/lib"
 	"os"
 	"os/signal"
 	"syscall"
 	"runtime/debug"
 	"fmt"
+	"sync"
 )
 
-var mainDebugHang chan int
+var MainDebugHang chan int
 
 func createWatcher() chan os.Signal {
 	ch := make(chan os.Signal)
@@ -26,21 +26,39 @@ type Stoppable interface {
 }
 
 var runningThing []*Stoppable
+var mutex sync.Mutex
 
 func init() {
+	mutex = sync.Mutex{}
 	runningThing = []*Stoppable{}
-	mainDebugHang = make(chan int)
+	MainDebugHang = make(chan int)
 }
 
-func registerRunning(thing Stoppable) {
+type UnregisterCallback = func()
+
+func RegisterRunning(thing Stoppable) UnregisterCallback {
 	runningThing = append(runningThing, &thing)
+	return func() {
+		UnRegisterRunning(thing)
+		thing.Close()
+	}
+}
+func UnRegisterRunning(thing Stoppable) {
+	mutex.Lock()
+	for index, item := range runningThing {
+		if item == &thing {
+			runningThing = append(runningThing[:index], runningThing[index+1:]...)
+			break
+		}
+	}
+	mutex.Unlock()
 }
 
-func startSignalHandler() {
+func StartSignalHandler() {
 	ch := createWatcher()
 
 	go func() {
-		lib.MainLogger.Println("receive quit signal:", <-ch)
+		MainLogger.Println("receive quit signal:", <-ch)
 		GracefulQuit(0)
 	}()
 }
@@ -48,25 +66,25 @@ func startSignalHandler() {
 func safeCleanup(obj *Stoppable) {
 	defer func() {
 		if r := recover(); r != nil {
-			lib.MainLogger.Printf("failed cleanup: %s\n%s", r, debug.Stack())
+			MainLogger.Printf("failed cleanup: %s\n%s", r, debug.Stack())
 		}
 	}()
-	lib.MainLogger.Println("stopping", (*obj).Inspect())
+	MainLogger.Println("stopping", (*obj).Inspect())
 	fmt.Println("stopping", (*obj).Inspect())
 	(*obj).Close()
 }
 
 func GracefulQuit(exit int) {
 	println("\x1B[H\x1B[JNotice: will terminate all child process, please wait...")
-	lib.MainLogger.Println("GracefulQuit: ", exit)
+	MainLogger.Println("GracefulQuit: ", exit)
 	for index := len(runningThing) - 1; index >= 0; index-- {
 		safeCleanup(runningThing[index])
 	}
-	lib.MainLogger.Println("os.Exit() call")
+	MainLogger.Println("os.Exit() call")
 	defer func() {
 		println("bye~")
 		os.Exit(exit)
 	}()
 
-	close(mainDebugHang)
+	close(MainDebugHang)
 }

@@ -1,9 +1,7 @@
 package gui
 
-import "github.com/jroimartin/gocui"
-
 type renderEvent struct {
-	g               *gocui.Gui
+	ctl             *Control
 	splitSideMiddle int
 	splitCenter     int
 	maxX            int
@@ -14,8 +12,8 @@ type renderable interface {
 	render(r *renderEvent)
 }
 
-func newRenderEvent(gui *gocui.Gui) *renderEvent {
-	maxX, maxY := gui.Size()
+func newRenderEvent(gui *Control) *renderEvent {
+	maxX, maxY := gui.gui.Size()
 
 	return &renderEvent{
 		gui,

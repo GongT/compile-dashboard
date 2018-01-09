@@ -3,13 +3,16 @@ package lib
 import (
 	"io/ioutil"
 	"encoding/json"
+	"os"
 )
 
-type configFile struct {
-	Transpilers []struct {
-		Command string `json:"command"`
-		Title   string `json:"title"`
-	} `json:"transpilers"`
+type ConfigFileTranspilerDefine struct {
+	Command string `json:"command"`
+	Title   string `json:"title"`
+}
+
+type ConfigFileType struct {
+	Transpilers []ConfigFileTranspilerDefine `json:"transpilers"`
 	Scripts struct {
 		Start   string `json:"start"`
 		Restart string `json:"restart"`
@@ -18,19 +21,24 @@ type configFile struct {
 	Watch []string `json:"watch"`
 }
 
-var ConfigFile configFile
+var ConfigFile ConfigFileType
 
-func init() {
+func LoadConfigFile() {
 	ConfigFile = decodeConfigFile("build-config.json")
+
+	if ConfigFile.Scripts.Start == "" {
+		println("Config Error: scripts.start is required.")
+		os.Exit(1)
+	}
 }
 
-func decodeConfigFile(file string) configFile {
+func decodeConfigFile(file string) ConfigFileType {
 	content, err := ioutil.ReadFile(file)
 	if err != nil {
 		println("Error: can not open " + file + " for read.")
 		panic(err)
 	}
-	var jsondata configFile
+	var jsondata ConfigFileType
 	json.Unmarshal(content, &jsondata)
 
 	return jsondata

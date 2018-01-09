@@ -14,7 +14,9 @@ type ChildProcess struct {
 	title      string
 	OutputPipe *bufferWriter
 	Stop       chan error
+	waitStop   chan error
 	isRunning  bool
+	stopping   bool
 }
 
 type bufferWriter struct {
@@ -91,21 +93,27 @@ func NewChildProcess(script string) *ChildProcess {
 		script,
 		pipe,
 		make(chan error, 1),
+		make(chan error, 1),
+		false,
 		false,
 	}
 
 	go func() {
 		cp.isRunning = true
-		lib.MainLogger.Println("subprocess start to run: ", cmd)
+
+		lib.MainLogger.Println("[sub process] start to run: ", cmd)
 		err := cmd.Run() // this will block until process exit
+		lib.MainLogger.Println("[sub process] end: ", script)
+
 		cp.isRunning = false
 
 		cp.Stop <- err
+		cp.waitStop <- err
 
 		close(pipe.Output)
 		close(pipe.Clear)
 		close(cp.Stop)
-		lib.MainLogger.Println("subprocess end: ", script)
+		close(cp.waitStop)
 	}()
 
 	return &cp
@@ -115,11 +123,16 @@ func (cp *ChildProcess) Inspect() string {
 	return fmt.Sprintf("child process: %d", cp.cmd.Process.Pid)
 }
 func (cp *ChildProcess) Close() (err error) {
-	pid := fmt.Sprint(cp.cmd.Process.Pid)
-	lib.MainLogger.Printf("stop child process: %s: %s", pid, cp.title)
 	if cp.cmd.ProcessState != nil && cp.cmd.ProcessState.Exited() {
 		return
 	}
+	if cp.stopping || !cp.isRunning {
+		return
+	}
+	cp.stopping = true
+
+	pid := fmt.Sprint(cp.cmd.Process.Pid)
+	lib.MainLogger.Printf("process[%s] (%s...) will stop\n", pid, cp.title[0:10])
 
 	cp.cmd.Process.Signal(os.Interrupt)
 	select {
@@ -130,7 +143,7 @@ func (cp *ChildProcess) Close() (err error) {
 			lib.MainLogger.Println("process["+pid+"] can not kill:", err)
 			return
 		}
-	case err = <-cp.Stop:
+	case err = <-cp.waitStop:
 		if err != nil {
 			lib.MainLogger.Println("process["+pid+"] done with error = %v", err)
 		} else {

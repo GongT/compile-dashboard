@@ -9,6 +9,7 @@ type scrollTab struct {
 	view   *gocui.View
 	gui    *gocui.Gui
 	action initAction
+	inited bool
 }
 
 func newScrollTab(name string, gui *gocui.Gui, action initAction) *scrollTab {
@@ -17,6 +18,7 @@ func newScrollTab(name string, gui *gocui.Gui, action initAction) *scrollTab {
 		nil,
 		gui,
 		action,
+		false,
 	}
 
 	err := st.initKeys()
@@ -42,21 +44,24 @@ func (st *scrollTab) initKeys() error {
 }
 
 func (st *scrollTab) render(e *renderEvent) error {
-	err := subLayout(e.g, st.name, Geo{0, 0, e.splitCenter - 1, e.maxY - 2}, func(view *gocui.View) {
+	err := subLayout(e.ctl.gui, st.name, Geo{0, 0, e.splitCenter - 1, e.maxY - 2}, func(view *gocui.View) {
+		if st.inited {
+			return
+		}
+		st.inited = true
 		view.Title = "Application Output: " + st.name
 		view.Wrap = true
 		view.Autoscroll = true
 		st.view = view
-		st.action(ViewInitEvent{
-			e.g,
-			view,
-		})
-		st.action = nil
+		go func() {
+			st.action(newViewInitEvent(e.ctl, view))
+			st.gui.Update(emptyRenderEvent)
+		}()
 	})
 	if err != nil {
 		return err
 	}
-	e.g.SetViewOnTop(st.name)
+	e.ctl.gui.SetViewOnTop(st.name)
 	return nil
 }
 
